@@ -1,0 +1,38 @@
+800
+600
+Node
+400.0 599.0 0.0 -99.0 400.0 200.0 0.0 -100.0
+Left
+Node
+0.0 0.0 400.0 0.0
+Left
+Leaf
+Right
+Node
+400.0 599.0 -400.0 0.0
+Left
+Leaf
+Right
+Node
+0.0 599.0 0.0 -599.0
+Left
+Leaf
+Right
+Leaf
+Right
+Node
+400.0 0.0 399.0 0.0
+Left
+Leaf
+Right
+Node
+799.0 0.0 0.0 599.0
+Left
+Leaf
+Right
+Node
+799.0 599.0 -399.0 0.0
+Left
+Leaf
+Right
+Leaf

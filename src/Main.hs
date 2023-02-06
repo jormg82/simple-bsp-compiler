@@ -19,85 +19,81 @@ import Data.Maybe(catMaybes)
 --}
 
 
--- The file with de data
+-- The file with de map data
 type Width     = Int
 type Height    = Int
-type Wall      = (Int, Int, Int, Int)
-data FileWalls = FileWalls Width Height [Wall]
+type FileWall  = (Int, Int, Int, Int)
 
-
-type Map = (G.Polygon, [G.Segment])
-
+data FileWalls = FileWalls Width Height [FileWall]
+                 deriving Show
 
 -- A BSP tree
--- The nodes contains the partitioner segments,
--- and one leaf contains a convex polygon
-data BSPTree = Node G.Segment BSPTree BSPTree
-             | Leaf G.Polygon
+-- The nodes contains the colinear partitioner walls
+data BSPTree = Node G.Facade BSPTree BSPTree
+             | Leaf
              deriving Show
+ 
 
--- the main function of the partition
-bsp :: Map -> BSPTree
-bsp (pol, [])   = Leaf pol
-bsp (pol, x:xs) = case G.partitionPolygon pol x of
-                    (Just p1, Nothing) -> Leaf p1
-                    (Nothing, Just p2) -> Leaf p2
-                    (Just p1, Just p2) -> Node x (bsp (p1, xs)) (bsp (p2, xs))
-                    (Nothing, Nothing) -> error "impossible!!"
+-- the main partition function
+bsp :: [G.Facade] -> BSPTree
+bsp []     = Leaf
+bsp [f]    = Node f Leaf Leaf
+bsp (f:fs) = Node f (bsp fs1) (bsp fs2)
+             where
+               (fs1, fs2) = G.partitionFacades f fs
 
 
 parseFileWalls :: String -> FileWalls
-parseFileWalls strin = FileWalls w h walls
+parseFileWalls strin = FileWalls w h fwalls
   where
     (ws:hs:ss) = lines strin
     w          = read ws :: Int    
     h          = read hs :: Int    
-    intsToWall = \[x1, y1, x2, y2] -> (x1, y1, x2, y2)
-    walls      = map (intsToWall . map read . words) ss
+    fwalls     = map (toquad . map read . words) ss
+    toquad [x, y, z, t] = (x, y, z, t)
 
 
-toBSPFile :: Width -> Height -> BSPTree -> String
-toBSPFile w s tree = show w ++ "\n" ++ show s ++ "\n" ++ writeTree tree
-
-
-writeTree :: BSPTree -> String
-writeTree (Leaf pol) = "Leaf " ++ G.writePolygon pol
-writeTree (Node seg l r) = "Node " ++ G.writeSegment seg ++ "\n"
-                        ++ "Left " ++ writeTree l ++ "\n"
-                        ++ "Right " ++ writeTree r
+writeBSPTree :: BSPTree -> String
+writeBSPTree Leaf         = "Leaf\n"
+writeBSPTree (Node f l r) = "Node\n" ++ G.writeFacade f ++ "\n"
+                         ++ "Left\n" ++ writeBSPTree l
+                         ++ "Right\n" ++ writeBSPTree r
          
 
--- Walls are strictly inside the
-wallToSegment :: Wall -> G.Segment
-wallToSegment (x1, y1, x2, y2) = G.visibleSegment (x1', y1') (x2', y2')
+-- the walls strictly inside the limits, except maybe
+-- one end
+checkPos :: Width -> Height -> FileWall -> Bool
+checkPos w h (x1, y1, x2, y2) = 0<=x1 && x1<w && 0<=x2 && x2<w
+                             && 0<=y1 && y1<h && 0<=y2 && y2<h
+
+
+fileWallToGWall :: FileWall -> G.Wall
+fileWallToGWall (x1, y1, x2, y2) = (p1, G.diff p2 p1)
   where
-    x1' = fromIntegral x1
-    y1' = fromIntegral y1
-    x2' = fromIntegral x2
-    y2' = fromIntegral y2
+    p1 = (fromIntegral x1, fromIntegral y1)
+    p2 = (fromIntegral x2, fromIntegral y2)
 
 
-checkWall :: G.Polygon -> G.Segment -> Bool
-checkWall pol segment = G.checkSegment segment && G.checkInside pol segment
-
-
-wallsToMap :: FileWalls -> Map
-wallsToMap (FileWalls w h walls) = (initPol, segs')
+fileWallsToFacades :: FileWalls -> [G.Facade]
+fileWallsToFacades (FileWalls w h fwalls)
+  | w>0 && h>0 && all (checkPos w h) fwalls = facades
+  | otherwise = error "Bad walls file"
   where
-    w'      = fromIntegral w
-    h'      = fromIntegral h
-    s0      = G.visibleSegment (0, 0) (w', 0)
-    s1      = G.visibleSegment (w', 0) (w', h')
-    s2      = G.visibleSegment (w', h') (h', 0)
-    s3      = G.visibleSegment (h', 0) (0, 0)
-    initPol = [s0, s1, s2, s3]
-    segs    = map (G.enlargeSegment initPol . wallToSegment) walls
-    segs'   = catMaybes $ map G.merges $ groupBy G.colinear segs
-
+    fw0     = (0, 0, w-1, 0)
+    fw1     = (w-1, 0, w-1, h-1)
+    fw2     = (w-1, h-1, 0, h-1)
+    fw3     = (0, h-1, 0, 0)
+    fwalls' = fwalls ++ [fw0, fw1, fw2, fw3]  
+    walls   = map fileWallToGWall fwalls'
+    facades = map G.normalize (groupBy G.colinearWalls walls)
 
 
 main :: IO ()
-main = do file <- parseFileWalls <$> readFile "walls.txt"
-          let FileWalls w h _ = file
-          writeFile "bsptree.txt" $ toBSPFile w h $ bsp $ wallsToMap file
+main = do
+  file <- parseFileWalls <$> readFile "walls.txt"
+  let FileWalls w h _ = file
+      facades = fileWallsToFacades file
+      tree    = bsp facades
+      outstr  = show w ++ "\n" ++ show h ++ "\n" ++ writeBSPTree tree
+  writeFile "bsptree.txt" outstr
 
